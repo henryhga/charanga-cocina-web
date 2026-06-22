@@ -344,6 +344,42 @@
 
     .td-input { text-align: center; width: 90px; }
 
+    @media (max-width: 680px) {
+      .acc-body { overflow-x: visible; }
+      .menu-table { min-width: 0; width: 100%; }
+      .menu-table thead { display: none; }
+      .menu-table, .menu-table tbody { display: block; width: 100%; }
+      .menu-table tr {
+        display: flex;
+        flex-wrap: wrap;
+        padding: 12px 14px;
+      }
+      .menu-table td { padding: 0; }
+      .td-product {
+        display: block;
+        width: 100%;
+        white-space: normal;
+        margin-bottom: 10px;
+      }
+      .td-input {
+        display: block;
+        width: 33.333%;
+        text-align: center;
+        padding: 0 4px;
+      }
+      .td-input::before {
+        content: attr(data-label);
+        display: block;
+        font-size: 9.5px;
+        font-weight: 700;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: .3px;
+        margin-bottom: 4px;
+      }
+      .table-input { width: 100%; }
+    }
+
     .table-input {
       width: 78px;
       border: 1.5px solid var(--border);
@@ -621,7 +657,7 @@
       <div class="card-body">
         <div class="form-grid">
           <div class="form-group">
-            <label>Nombre completo *</label>
+            <label>Nombre *</label>
             <input type="text" id="custName" placeholder="Tu nombre" />
           </div>
           <div class="form-group">
@@ -807,17 +843,17 @@ const state = {};
       rows += `
         <tr>
           <td class="td-product">${name}${badge}</td>
-          <td class="td-input">
+          <td class="td-input" data-label="Cantidad">
             <input class="table-input" type="number" min="0" placeholder="0"
               id="${pfx}_c"
               oninput="onCellChange('${cat.key}',${ii},'cantidad',this.value,this)" />
           </td>
-          <td class="td-input">
+          <td class="td-input" data-label="LB">
             <input class="table-input" type="number" min="0" step="0.1" placeholder="0"
               id="${pfx}_l"
               oninput="onCellChange('${cat.key}',${ii},'lb',this.value,this)" />
           </td>
-          <td class="td-input">
+          <td class="td-input" data-label="Precio">
             <input class="table-input" type="number" min="0" step="0.01" placeholder="0.00"
               id="${pfx}_p"
               oninput="onCellChange('${cat.key}',${ii},'precio',this.value,this)" />
@@ -950,6 +986,41 @@ function clearAll() {
 }
 
 // ── SUBMIT ────────────────────────────────────────────
+const WEB3FORMS_KEY = '501d325e-7e47-46a6-8a3a-330c6f8b6742';
+
+function buildOrderText(id) {
+  const date     = document.getElementById('custDate').value;
+  const estimada = document.getElementById('custEstimada').value;
+  const notes    = document.getElementById('custNotes').value.trim();
+
+  const lines = [];
+  let total = 0;
+  MENU.forEach(cat => {
+    cat.items.forEach((item, ii) => {
+      const s = state[cat.key][ii];
+      const qty    = parseFloat(s.cantidad) || 0;
+      const precio = parseFloat(s.precio)   || 0;
+      if (!qty && !s.lb && !precio) return;
+      const name = typeof item === 'string' ? item : item.name;
+      const sub  = qty * precio;
+      total += sub;
+      const detail = [
+        s.cantidad ? `Cantidad: ${s.cantidad}` : '',
+        s.lb       ? `LB: ${s.lb}`             : '',
+        s.precio   ? `Precio: $${parseFloat(s.precio).toFixed(2)}` : ''
+      ].filter(Boolean).join(' · ');
+      lines.push(`- ${name} (${detail})`);
+    });
+  });
+
+  return `Pedido ${id}\n`
+    + `Fecha de entrega: ${date}\n`
+    + `Hora estimada: ${estimada || '—'}\n\n`
+    + `PRODUCTOS:\n${lines.join('\n')}\n\n`
+    + `TOTAL: $${total.toFixed(2)}\n`
+    + (notes ? `\nNotas: ${notes}` : '');
+}
+
 function submitOrder() {
   const name  = document.getElementById('custName').value.trim();
   const phone = document.getElementById('custPhone').value.trim();
@@ -961,8 +1032,36 @@ function submitOrder() {
   if (!hasItems) { alert('Agrega al menos un producto al pedido.'); return; }
 
   const id = 'HL-' + Date.now().toString(36).toUpperCase();
-  document.getElementById('modalId').textContent = `Pedido ${id}`;
-  document.getElementById('modalOverlay').classList.add('show');
+  const submitBtn = document.querySelector('.btn-submit');
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Enviando…';
+
+  fetch('https://api.web3forms.com/submit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({
+      access_key: WEB3FORMS_KEY,
+      subject: `Nuevo Pedido ${id} — Charanga Cocina`,
+      from_name: 'Charanga Cocina — Pedidos',
+      name,
+      phone,
+      message: buildOrderText(id)
+    })
+  })
+    .then(res => res.json())
+    .then(data => {
+      if (!data.success) throw new Error(data.message || 'Error al enviar');
+      document.getElementById('modalId').textContent = `Pedido ${id}`;
+      document.getElementById('modalOverlay').classList.add('show');
+      closeCart();
+    })
+    .catch(() => {
+      alert('No se pudo enviar el pedido. Verifica tu conexión e intenta de nuevo.');
+    })
+    .finally(() => {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Enviar Pedido →';
+    });
 }
 
 function closeModal() {
